@@ -7,7 +7,7 @@ name = "qwen-hydra"
 version = "0.1.0"
 description = "Shared-trunk Qwen3-0.6B with LoRA-scale delta swapping for embed/rerank/generate"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 license = "MIT"
 
 dependencies = [
