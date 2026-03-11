@@ -1,6 +1,4 @@
-# Qwen-Hydra 🐉
-
-![Qwen-Hydra](hydra.jpg)
+# Qwen-Hydra
 
 **One trunk, three heads.** Load Qwen3-0.6B once, hot-swap weight deltas for embedding, reranking, and generation.
 
