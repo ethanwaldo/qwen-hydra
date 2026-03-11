@@ -7,20 +7,22 @@ name = "qwen-hydra"
 version = "0.1.0"
 description = "Shared-trunk Qwen3-0.6B with LoRA-scale delta swapping for embed/rerank/generate"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 license = "MIT"
 
 dependencies = [
-    "torch>=2.1",
-    "transformers>=4.51",
-    "safetensors>=0.4",
-    "huggingface-hub>=0.20",
+    "torch>=2.10.0",
+    "transformers>=5.1.0",
+    "safetensors>=0.7.0",
+    "tokenizers>=0.22.2",
+    "huggingface-hub>=0.30.0",
+    "peft>=0.15.0",
     "click>=8.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
+    "pytest>=9.0",
     "pytest-timeout>=2.2",
 ]
 
