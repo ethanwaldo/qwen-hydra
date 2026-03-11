@@ -34,6 +34,12 @@ def main():
     help="Directory to write trunk + deltas into.",
 )
 @click.option(
+    "--size", "-s",
+    type=click.Choice(["0.6B", "4B", "8B"], case_sensitive=False),
+    default="0.6B",
+    help="Model size to extract (default: 0.6B).",
+)
+@click.option(
     "--cache-dir",
     type=click.Path(path_type=Path),
     default=None,
@@ -45,13 +51,14 @@ def main():
     default=1e-8,
     help="Sparsity threshold: deltas smaller than this are treated as zero.",
 )
-def extract(output: Path, cache_dir: Path, threshold: float):
+def extract(output: Path, size: str, cache_dir: Path, threshold: float):
     """Download models and extract weight deltas."""
     from qwen_hydra.extract import extract as run_extract
 
-    click.echo(f"Extracting deltas to {output} ...")
+    click.echo(f"Extracting Qwen3-{size} deltas to {output} ...")
     manifest = run_extract(
         output_dir=output,
+        size=size,
         cache_dir=cache_dir,
         sparsity_threshold=threshold,
     )
@@ -88,8 +95,9 @@ def info(extracted_dir: Path):
         manifest = json.load(f)
 
     click.echo(f"Qwen-Hydra Delta Directory: {extracted_dir}")
+    click.echo(f"  Size:       {manifest.get('size', 'unknown')}")
     click.echo(f"  Base model: {manifest['base_model']}")
-    click.echo(f"  Trunk:  {manifest['trunk_size_bytes'] / 1e6:.1f} MB")
+    click.echo(f"  Trunk:      {manifest['trunk_size_bytes'] / 1e6:.1f} MB")
     click.echo()
 
     for task_name, info in manifest["tasks"].items():

@@ -18,15 +18,15 @@ import torch
 import torch.nn.functional as F
 
 from qwen_hydra.config import (
-    BASE_MODEL_ID,
-    EMBED_MODEL_ID,
-    RERANK_MODEL_ID,
+    PROFILES,
     RERANK_PREFIX,
     RERANK_SUFFIX,
+    VALID_SIZES,
     Task,
     delta_filename,
     format_embed_input,
     format_rerank_input,
+    get_profile,
 )
 from qwen_hydra.heads import embed_head, last_token_pool, rerank_head
 
@@ -44,10 +44,28 @@ class TestConfig:
         assert delta_filename(Task.RERANK) == "delta_rerank.safetensors"
         assert delta_filename(Task.GENERATE) == "delta_generate.safetensors"
 
-    def test_model_ids_set(self):
-        assert "Qwen" in BASE_MODEL_ID
-        assert "Embedding" in EMBED_MODEL_ID
-        assert "Reranker" in RERANK_MODEL_ID
+    def test_all_sizes_have_profiles(self):
+        for size in VALID_SIZES:
+            profile = get_profile(size)
+            assert "Qwen" in profile.base_id
+            assert "Embedding" in profile.embed_id
+            assert "Reranker" in profile.rerank_id
+
+    def test_profile_model_id_dispatch(self):
+        p = get_profile("0.6B")
+        assert p.model_id(Task.EMBED) == p.embed_id
+        assert p.model_id(Task.RERANK) == p.rerank_id
+        assert p.model_id(Task.GENERATE) == p.base_id
+
+    def test_invalid_size_raises(self):
+        import pytest
+        with pytest.raises(ValueError, match="Unknown model size"):
+            get_profile("99B")
+
+    def test_profile_sizes_match_ids(self):
+        """Each profile's model IDs should contain the size string."""
+        for size, profile in PROFILES.items():
+            assert size in profile.base_id or size.replace(".", "") in profile.base_id
 
     def test_format_embed_with_instruction(self):
         result = format_embed_input("Retrieve docs", "hello world")
@@ -251,7 +269,8 @@ class TestIntegration:
         texts = ["What is the capital of France?", "Paris is a city in Europe."]
 
         # Standalone
-        st_model = SentenceTransformer(EMBED_MODEL_ID, device="cpu")
+        embed_model_id = get_profile("0.6B").embed_id
+        st_model = SentenceTransformer(embed_model_id, device="cpu")
         standalone_vecs = torch.tensor(
             st_model.encode(texts, normalize_embeddings=True)
         )

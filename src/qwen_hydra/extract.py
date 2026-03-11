@@ -1,16 +1,16 @@
 """
 Delta Extraction Engine.
 
-Downloads all three Qwen3-0.6B variants from HuggingFace, diffs each
-fine-tuned model against the base, and saves compact weight deltas as
-safetensors files.
+Downloads all three Qwen3 variants for a given size from HuggingFace,
+diffs each fine-tuned model against the base, and saves compact weight
+deltas as safetensors files.
 
-First run downloads ~3.6 GB of models. The extracted deltas are typically
-only a few MB each.
+Supports sizes: 0.6B, 4B, 8B.
 """
 
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -19,23 +19,21 @@ from huggingface_hub import snapshot_download
 from safetensors.torch import load_file, save_file
 
 from qwen_hydra.config import (
-    BASE_MODEL_ID,
+    DEFAULT_SIZE,
     DELTA_MANIFEST,
-    EMBED_RERANK_VOCAB_SIZE,
-    TASK_TO_MODEL_ID,
     TOKENIZER_DIR,
     TRUNK_CONFIG,
     TRUNK_WEIGHTS,
     Task,
     delta_filename,
+    get_profile,
 )
 
 log = logging.getLogger("qwen_hydra.extract")
 
 
-# Parameters whose shapes are expected to differ between base and
-# fine-tuned variants due to vocab-size mismatch (base=151936 vs 151669).
-# Only the overlapping rows are diffed; the rest are ignored.
+# Parameters whose shapes may differ between base and fine-tuned
+# variants due to vocab-size mismatch. Only overlapping rows are diffed.
 _VOCAB_PARAMS = {"model.embed_tokens.weight", "lm_head.weight"}
 
 
@@ -124,25 +122,35 @@ def _compute_delta(
 
 def extract(
     output_dir: Path,
+    size: str = DEFAULT_SIZE,
     cache_dir: Optional[Path] = None,
     sparsity_threshold: float = 1e-8,
 ) -> dict:
     """
     Full extraction pipeline:
-    1. Download all three models
+    1. Download all three models for the given size
     2. Load base weights as reference
     3. Diff each fine-tuned variant against base
     4. Save trunk + deltas to output_dir
 
+    Args:
+        output_dir: Where to write trunk + deltas.
+        size: Model size — "0.6B", "4B", or "8B".
+        cache_dir: HuggingFace cache directory.
+        sparsity_threshold: Deltas smaller than this are treated as zero.
+
     Returns a manifest dict with sizes and metadata.
     """
+    profile = get_profile(size)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    log.info("Extracting Qwen3-%s hydra (base=%s)", size, profile.base_id)
+
     # ── Download models ────────────────────────────────────────────────
-    base_dir = _download_model(BASE_MODEL_ID, cache_dir)
+    base_dir = _download_model(profile.base_id, cache_dir)
     ft_dirs = {}
     for task in [Task.EMBED, Task.RERANK]:
-        model_id = TASK_TO_MODEL_ID[task]
+        model_id = profile.model_id(task)
         ft_dirs[task] = _download_model(model_id, cache_dir)
 
     # ── Load base weights ──────────────────────────────────────────────
@@ -157,7 +165,6 @@ def extract(
     trunk_size = trunk_path.stat().st_size
 
     # ── Copy base config ───────────────────────────────────────────────
-    import shutil
     base_config = base_dir / "config.json"
     if base_config.exists():
         shutil.copy2(base_config, output_dir / TRUNK_CONFIG)
@@ -167,7 +174,6 @@ def extract(
     tok_dir.mkdir(exist_ok=True)
     for tok_file in base_dir.glob("tokenizer*"):
         shutil.copy2(tok_file, tok_dir / tok_file.name)
-    # Also copy special_tokens_map if present
     for extra in ["special_tokens_map.json", "vocab.json", "merges.txt"]:
         src = base_dir / extra
         if src.exists():
@@ -176,7 +182,8 @@ def extract(
     # ── Extract deltas ─────────────────────────────────────────────────
     manifest = {
         "version": 1,
-        "base_model": BASE_MODEL_ID,
+        "size": size,
+        "base_model": profile.base_id,
         "trunk_size_bytes": trunk_size,
         "tasks": {},
     }
@@ -194,7 +201,7 @@ def extract(
         delta_size = delta_path.stat().st_size
 
         manifest["tasks"][task.value] = {
-            "model_id": TASK_TO_MODEL_ID[task],
+            "model_id": profile.model_id(task),
             "delta_file": delta_filename(task),
             "delta_size_bytes": delta_size,
             "num_delta_params": len(deltas),
@@ -210,7 +217,7 @@ def extract(
 
     # Generation uses base weights directly — no delta needed
     manifest["tasks"][Task.GENERATE.value] = {
-        "model_id": BASE_MODEL_ID,
+        "model_id": profile.base_id,
         "delta_file": None,
         "delta_size_bytes": 0,
         "num_delta_params": 0,

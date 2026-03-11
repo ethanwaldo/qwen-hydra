@@ -1,9 +1,12 @@
 """
 Constants, model IDs, paths, and template strings for Qwen-Hydra.
+
+Supports three model sizes: 0.6B, 4B, and 8B.
 """
 
-from pathlib import Path
+from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 
 class Task(str, Enum):
@@ -13,32 +16,62 @@ class Task(str, Enum):
     GENERATE = "generate"
 
 
-# ── HuggingFace model IDs ──────────────────────────────────────────────
-BASE_MODEL_ID = "Qwen/Qwen3-0.6B"
-EMBED_MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
-RERANK_MODEL_ID = "Qwen/Qwen3-Reranker-0.6B"
+# ── Supported model sizes ──────────────────────────────────────────────
 
-TASK_TO_MODEL_ID = {
-    Task.EMBED: EMBED_MODEL_ID,
-    Task.RERANK: RERANK_MODEL_ID,
-    Task.GENERATE: BASE_MODEL_ID,
+VALID_SIZES = ("0.6B", "4B", "8B")
+
+
+@dataclass(frozen=True)
+class ModelProfile:
+    """HuggingFace model IDs and metadata for a given size."""
+    size: str
+    base_id: str
+    embed_id: str
+    rerank_id: str
+
+    def model_id(self, task: Task) -> str:
+        return {
+            Task.EMBED: self.embed_id,
+            Task.RERANK: self.rerank_id,
+            Task.GENERATE: self.base_id,
+        }[task]
+
+
+PROFILES: dict[str, ModelProfile] = {
+    "0.6B": ModelProfile(
+        size="0.6B",
+        base_id="Qwen/Qwen3-0.6B",
+        embed_id="Qwen/Qwen3-Embedding-0.6B",
+        rerank_id="Qwen/Qwen3-Reranker-0.6B",
+    ),
+    "4B": ModelProfile(
+        size="4B",
+        base_id="Qwen/Qwen3-4B",
+        embed_id="Qwen/Qwen3-Embedding-4B",
+        rerank_id="Qwen/Qwen3-Reranker-4B",
+    ),
+    "8B": ModelProfile(
+        size="8B",
+        base_id="Qwen/Qwen3-8B",
+        embed_id="Qwen/Qwen3-Embedding-8B",
+        rerank_id="Qwen/Qwen3-Reranker-8B",
+    ),
 }
 
-# ── Architecture constants ─────────────────────────────────────────────
-# Shared across all three variants
-NUM_LAYERS = 28
-HIDDEN_SIZE = 1024
-NUM_ATTENTION_HEADS = 16
-NUM_KV_HEADS = 8
-INTERMEDIATE_SIZE = 3072
+DEFAULT_SIZE = "0.6B"
 
-# Vocab sizes differ: base=151936, embed/rerank=151669
-BASE_VOCAB_SIZE = 151936
-EMBED_RERANK_VOCAB_SIZE = 151669
+
+def get_profile(size: str = DEFAULT_SIZE) -> ModelProfile:
+    """Get the model profile for a given size string."""
+    if size not in PROFILES:
+        raise ValueError(
+            f"Unknown model size '{size}'. Choose from: {', '.join(VALID_SIZES)}"
+        )
+    return PROFILES[size]
+
 
 # ── Reranker token IDs ─────────────────────────────────────────────────
-# These are looked up dynamically from the tokenizer at init time, but we
-# store the token strings here for reference.
+# Looked up dynamically from the tokenizer at init time.
 RERANK_TRUE_TOKEN = "yes"
 RERANK_FALSE_TOKEN = "no"
 
