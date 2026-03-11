@@ -65,7 +65,7 @@ class SharedTrunk:
                 padding_side="left",
             )
 
-        # Load the causal LM model (includes LM head for rerank/generate)
+        # Load the causal LM model directly to target device (no CPU staging)
         log.info("Loading trunk model from %s ...", self.extracted_dir)
         config_path = self.extracted_dir / TRUNK_CONFIG
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -73,8 +73,8 @@ class SharedTrunk:
             config=str(config_path) if config_path.exists() else None,
             torch_dtype=self.dtype,
             trust_remote_code=True,
+            device_map={"": self.device},
         )
-        self.model.to(self.device)
         self.model.eval()
 
         # Store frozen copies of base weights for clean delta swaps
@@ -93,7 +93,7 @@ class SharedTrunk:
                 delta_path = self.extracted_dir / df
                 if delta_path.exists():
                     self._deltas[task] = load_file(
-                        str(delta_path), device="cpu"
+                        str(delta_path), device=self.device
                     )
                     log.info(
                         "  Loaded %s deltas: %d params",
@@ -105,6 +105,34 @@ class SharedTrunk:
     @property
     def active_task(self) -> Optional[Task]:
         return self._active_task
+
+    def load_lora(self, adapter_path: str | Path) -> None:
+        """
+        Merge a PEFT LoRA adapter into the trunk base weights.
+
+        Intended for loading the OSRS domain LoRA produced by stage 7.
+        After merging, _base_state is rebuilt so all future task switches
+        apply their deltas on top of (base + LoRA) rather than raw base.
+
+        Must be called before any switch_task().
+        """
+        from peft import PeftModel
+        adapter_path = Path(adapter_path)
+        log.info("Loading OSRS LoRA from %s ...", adapter_path)
+        peft_model = PeftModel.from_pretrained(
+            self.model,
+            str(adapter_path),
+            torch_dtype=self.dtype,
+        )
+        # Merge LoRA deltas into the base weights and remove PEFT wrapper
+        self.model = peft_model.merge_and_unload()
+        # Rebuild frozen base state so task deltas stack on merged weights
+        self._base_state = {}
+        for name, param in self.model.named_parameters():
+            self._base_state[name] = param.data.clone()
+            param.requires_grad_(False)
+        self._active_task = None
+        log.info("OSRS LoRA merged. Base state rebuilt (%d params).", len(self._base_state))
 
     def _reset_to_base(self) -> None:
         """Restore all model weights to the frozen base state."""
