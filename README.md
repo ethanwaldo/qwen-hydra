@@ -24,11 +24,15 @@ The deltas are typically just a few MB each, while the base model is hundreds of
 
 ### Memory Savings
 
-| Size | 3× Separate Models | Qwen-Hydra | Savings |
+Loading three separate models triples your memory. Qwen-Hydra loads **one** and adds tiny deltas:
+
+| Size | Single Model (bf16) | 3× Separate | Hydra (1 trunk + deltas) |
 |---|---|---|---|
-| 0.6B | ~3.6 GB | ~1.3 GB | ~64% |
-| 4B | ~24 GB | ~8.5 GB | ~64% |
-| 8B | ~48 GB | ~17 GB | ~64% |
+| 0.6B | ~1.2 GB | ~3.6 GB | **~1.2 GB** |
+| 4B | ~8 GB | ~24 GB | **~8 GB** |
+| 8B | ~16 GB | ~48 GB | **~16 GB** |
+
+The deltas are typically just a few MB each — negligible compared to the trunk.
 
 ## Quick Start
 
